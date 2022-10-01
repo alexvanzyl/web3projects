@@ -7,13 +7,13 @@
 const hre = require("hardhat");
 
 async function main() {
-  const [_, payer, payee] = await hre.ethers.getSigners();
-  const Escrow = await hre.ethers.getContractFactory("Escrow");
-  const escrow = await Escrow.deploy(payer.address, payee.address, 1000);
+  const [_, sigOne, sigTwo] = await hre.ethers.getSigners();
+  const MultiSig = await hre.ethers.getContractFactory("MultiSig");
+  const multiSig = await MultiSig.deploy();
 
-  await escrow.deployed();
+  await multiSig.deployed([sigOne.address, sigTwo.address], 2, 100);
 
-  console.log(`Escrow contract address: ${escrow.address}`);
+  console.log(`MultiSig deployed to ${lock.address}`);
 }
 
 // We recommend this pattern to be able to use async/await everywhere
