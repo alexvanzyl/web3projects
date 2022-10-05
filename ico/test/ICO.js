@@ -207,14 +207,10 @@ describe("ICO", function () {
       );
 
       await expect(
-        ico
-          .connect(investorOne)
-          .buy({ value: ethers.utils.parseUnits("1", "wei") })
+        ico.connect(investorOne).buy({ value: minPurchase - 1 })
       ).to.be.revertedWith("have to send between minPurchase and maxPurchase");
       await expect(
-        ico
-          .connect(investorOne)
-          .buy({ value: ethers.utils.parseUnits("21", "wei") })
+        ico.connect(investorOne).buy({ value: maxPurchase + 1 })
       ).to.be.revertedWith("have to send between minPurchase and maxPurchase");
     });
 
@@ -235,14 +231,10 @@ describe("ICO", function () {
         maxPurchase
       );
 
-      await ico
-        .connect(investorOne)
-        .buy({ value: ethers.utils.parseUnits("5", "wei") });
+      await ico.connect(investorOne).buy({ value: minPurchase });
 
       await expect(
-        ico
-          .connect(investorOne)
-          .buy({ value: ethers.utils.parseUnits("10", "wei") })
+        ico.connect(investorOne).buy({ value: maxPurchase })
       ).to.be.revertedWith("not enough tokens left for sale");
     });
 
@@ -262,13 +254,11 @@ describe("ICO", function () {
         minPurchase,
         maxPurchase
       );
-      await ico
-        .connect(investorOne)
-        .buy({ value: ethers.utils.parseUnits("10", "wei") });
+      await ico.connect(investorOne).buy({ value: minPurchase });
       const sale = await ico.sales(0);
 
       expect(sale.investor).to.equal(investorOne.address);
-      expect(sale.quantity.toNumber()).to.equal(price * 10);
+      expect(sale.quantity.toNumber()).to.equal(minPurchase * price);
     });
 
     it("Should decrement the amount of availableTokens", async function () {
@@ -287,13 +277,170 @@ describe("ICO", function () {
         minPurchase,
         maxPurchase
       );
-      await ico
-        .connect(investorOne)
-        .buy({ value: ethers.utils.parseUnits("10", "wei") });
+      await ico.connect(investorOne).buy({ value: minPurchase });
 
       expect(await ico.availableTokens()).to.equal(
         availableTokens - price * 10
       );
+    });
+  });
+
+  describe("Release", function () {
+    it("Should revert if attempted by none admin", async function () {
+      const { ico, investorOne } = await loadFixture(deployICOFixture);
+      await expect(ico.connect(investorOne).release()).to.be.revertedWith(
+        "only admin"
+      );
+    });
+
+    it("Should revert if ICO has not ended", async function () {
+      const { ico } = await loadFixture(deployICOFixture);
+      const duration = 100;
+      const price = 1;
+      const availableTokens = ethers.utils.parseUnits("100", "wei");
+      const minPurchase = ethers.utils.parseUnits("10", "wei");
+      const maxPurchase = ethers.utils.parseUnits("20", "wei");
+      await ico.start(
+        duration,
+        price,
+        availableTokens,
+        minPurchase,
+        maxPurchase
+      );
+
+      await expect(ico.release()).to.be.revertedWith("ICO must have ended");
+    });
+
+    it("Should release tokens to investors", async function () {
+      const { ico, token, investorOne, investorTwo } = await loadFixture(
+        deployICOFixture
+      );
+      await ico.whitelist(investorOne.address);
+      await ico.whitelist(investorTwo.address);
+      const duration = 100;
+      const price = 1;
+      const availableTokens = ethers.utils.parseUnits("100", "wei");
+      const minPurchase = ethers.utils.parseUnits("10", "wei");
+      const maxPurchase = ethers.utils.parseUnits("20", "wei");
+      await ico.start(
+        duration,
+        price,
+        availableTokens,
+        minPurchase,
+        maxPurchase
+      );
+      await ico.connect(investorOne).buy({ value: minPurchase });
+      await ico.connect(investorTwo).buy({ value: maxPurchase });
+      await time.increase(duration);
+      await ico.release();
+
+      expect(await token.balanceOf(investorOne.address)).to.equal(
+        ethers.BigNumber.from(minPurchase * price)
+      );
+      expect(await token.balanceOf(investorTwo.address)).to.equal(
+        ethers.BigNumber.from(maxPurchase * price)
+      );
+      expect(await ico.released()).to.equal(true);
+    });
+
+    it("Should revert if tokens have already been released", async function () {
+      const { ico, investorOne } = await loadFixture(deployICOFixture);
+      await ico.whitelist(investorOne.address);
+      const duration = 100;
+      const price = 1;
+      const availableTokens = ethers.utils.parseUnits("100", "wei");
+      const minPurchase = ethers.utils.parseUnits("10", "wei");
+      const maxPurchase = ethers.utils.parseUnits("20", "wei");
+      await ico.start(
+        duration,
+        price,
+        availableTokens,
+        minPurchase,
+        maxPurchase
+      );
+      await ico.connect(investorOne).buy({ value: minPurchase });
+      await time.increase(duration);
+      await ico.release();
+
+      await expect(ico.release()).to.be.revertedWith(
+        "tokens must not have been released"
+      );
+    });
+  });
+
+  describe("Withdraw", function () {
+    it("Should revert if attempted by none admin", async function () {
+      const { ico, owner, investorOne } = await loadFixture(deployICOFixture);
+      await expect(
+        ico.connect(investorOne).withdraw(owner.address, 10)
+      ).to.be.revertedWith("only admin");
+    });
+
+    it("Should revert if ICO has not ended", async function () {
+      const { ico, owner } = await loadFixture(deployICOFixture);
+      const duration = 100;
+      const price = 1;
+      const availableTokens = ethers.utils.parseUnits("100", "wei");
+      const minPurchase = ethers.utils.parseUnits("10", "wei");
+      const maxPurchase = ethers.utils.parseUnits("20", "wei");
+      await ico.start(
+        duration,
+        price,
+        availableTokens,
+        minPurchase,
+        maxPurchase
+      );
+
+      await expect(ico.withdraw(owner.address, minPurchase)).to.be.revertedWith(
+        "ICO must have ended"
+      );
+    });
+
+    it("Should revert if tokens have not been released", async function () {
+      const { ico, owner, investorOne } = await loadFixture(deployICOFixture);
+      await ico.whitelist(investorOne.address);
+      const duration = 100;
+      const price = 1;
+      const availableTokens = ethers.utils.parseUnits("100", "wei");
+      const minPurchase = ethers.utils.parseUnits("10", "wei");
+      const maxPurchase = ethers.utils.parseUnits("20", "wei");
+      await ico.start(
+        duration,
+        price,
+        availableTokens,
+        minPurchase,
+        maxPurchase
+      );
+      await ico.connect(investorOne).buy({ value: minPurchase });
+      await time.increase(duration);
+
+      await expect(ico.withdraw(owner.address, minPurchase)).to.be.revertedWith(
+        "tokens must have been released"
+      );
+    });
+
+    it("Should withdraw amount to specified address", async function () {
+      const { ico, owner, investorOne } = await loadFixture(deployICOFixture);
+      await ico.whitelist(investorOne.address);
+      const duration = 100;
+      const price = 1;
+      const availableTokens = ethers.utils.parseUnits("100", "wei");
+      const minPurchase = ethers.utils.parseUnits("10", "wei");
+      const maxPurchase = ethers.utils.parseUnits("20", "wei");
+      await ico.start(
+        duration,
+        price,
+        availableTokens,
+        minPurchase,
+        maxPurchase
+      );
+      await ico.connect(investorOne).buy({ value: minPurchase });
+      await time.increase(duration);
+      await ico.release();
+
+      await expect(
+        ico.withdraw(owner.address, minPurchase)
+      ).to.changeEtherBalances([ico, owner], [-10, 10]);
     });
   });
 });

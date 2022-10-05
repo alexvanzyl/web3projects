@@ -44,7 +44,7 @@ contract ICO {
 
     modifier icoEnded() {
         require(
-            end > 0 && (block.timestamp >= end || availableTokens > 0),
+            end > 0 && (block.timestamp >= end || availableTokens == 0),
             "ICO must have ended"
         );
         _;
